@@ -18,6 +18,8 @@ FetchContent_MakeAvailable(sea_g2p)
 
 # Link to your executable/library
 target_link_libraries(my_app PRIVATE sea_g2p::sea_g2p)
+# Copy the dictionary to the output directory for zero-config use
+sea_g2p_add_dictionary(my_app)
 ```
 
 ## 🛠️ Usage
