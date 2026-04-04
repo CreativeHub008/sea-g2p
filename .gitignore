@@ -18,3 +18,9 @@ target/
 
 # Virtual environments
 .venv
+.claude
+.vscode
+.idea
+.cursor
+.agent
+.env

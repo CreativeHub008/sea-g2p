@@ -1,0 +1,148 @@
+cmake_minimum_required(VERSION 3.16)
+project(sea_g2p VERSION 0.7.5 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# ── Options ──────────────────────────────────────────────────────────────────
+option(SEA_G2P_FETCH_PCRE2   "Fetch PCRE2 via FetchContent if not found on system" ON)
+option(SEA_G2P_BUILD_SHARED  "Build as shared library instead of static"           OFF)
+option(SEA_G2P_ENABLE_ICU    "Use ICU for NFC Unicode normalization (recommended)"  ON)
+
+# ── PCRE2 (required) ─────────────────────────────────────────────────────────
+find_package(PCRE2 CONFIG QUIET COMPONENTS 8BIT)
+
+if(NOT PCRE2_FOUND)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(PCRE2 QUIET libpcre2-8)
+    endif()
+endif()
+
+if(NOT PCRE2_FOUND)
+    if(SEA_G2P_FETCH_PCRE2)
+        include(FetchContent)
+        FetchContent_Declare(
+            pcre2
+            GIT_REPOSITORY https://github.com/PCRE2Project/pcre2.git
+            GIT_TAG        pcre2-10.44
+            GIT_SHALLOW    TRUE
+        )
+        set(PCRE2_BUILD_PCRE2_8     ON  CACHE BOOL "" FORCE)
+        set(PCRE2_BUILD_PCRE2_16    OFF CACHE BOOL "" FORCE)
+        set(PCRE2_BUILD_PCRE2_32    OFF CACHE BOOL "" FORCE)
+        set(PCRE2_BUILD_TESTS       OFF CACHE BOOL "" FORCE)
+        set(PCRE2_BUILD_PCRE2GREP   OFF CACHE BOOL "" FORCE)
+        set(PCRE2_SUPPORT_UNICODE   ON  CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(pcre2)
+        # Determine the correct target name (static vs shared)
+        if(TARGET pcre2-8-static)
+            set(_PCRE2_TARGET pcre2-8-static)
+        else()
+            set(_PCRE2_TARGET pcre2-8)
+        endif()
+    else()
+        message(FATAL_ERROR
+            "PCRE2 not found. Install libpcre2-dev (Linux) / pcre2 (brew/vcpkg), "
+            "or set SEA_G2P_FETCH_PCRE2=ON to download automatically.")
+    endif()
+else()
+    if(TARGET PCRE2::pcre2-8)
+        set(_PCRE2_TARGET PCRE2::pcre2-8)
+    else()
+        set(_PCRE2_TARGET ${PCRE2_LIBRARIES})
+    endif()
+endif()
+
+# ── ICU (optional, for NFC normalization) ────────────────────────────────────
+set(_HAS_ICU FALSE)
+if(SEA_G2P_ENABLE_ICU)
+    find_package(ICU QUIET COMPONENTS uc)
+    if(ICU_FOUND)
+        set(_HAS_ICU TRUE)
+        message(STATUS "sea_g2p: ICU found — NFC normalization enabled")
+    else()
+        message(STATUS "sea_g2p: ICU not found — NFC normalization disabled (input assumed NFC)")
+    endif()
+endif()
+
+# ── Library target ────────────────────────────────────────────────────────────
+set(SEA_G2P_SOURCES
+    src/regex_wrapper.cpp
+    src/resources.cpp
+    src/num2vi.cpp
+    src/numerical.cpp
+    src/datestime.cpp
+    src/units.cpp
+    src/technical.cpp
+    src/misc.cpp
+    src/vi_normalizer.cpp
+    src/g2p.cpp
+)
+
+if(SEA_G2P_BUILD_SHARED)
+    add_library(sea_g2p SHARED ${SEA_G2P_SOURCES})
+else()
+    add_library(sea_g2p STATIC ${SEA_G2P_SOURCES})
+endif()
+
+add_library(sea_g2p::sea_g2p ALIAS sea_g2p)
+
+target_include_directories(sea_g2p
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(sea_g2p PRIVATE ${_PCRE2_TARGET})
+
+if(_HAS_ICU)
+    target_link_libraries(sea_g2p PRIVATE ICU::uc)
+    target_compile_definitions(sea_g2p PRIVATE SEA_G2P_HAS_ICU)
+endif()
+
+# Windows: use UTF-8 execution charset
+if(MSVC)
+    target_compile_options(sea_g2p PRIVATE /utf-8)
+endif()
+
+# ── Install & export ──────────────────────────────────────────────────────────
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+install(TARGETS sea_g2p
+    EXPORT  sea_g2pTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+install(EXPORT sea_g2pTargets
+    FILE      sea_g2pTargets.cmake
+    NAMESPACE sea_g2p::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sea_g2p
+)
+
+configure_package_config_file(
+    cmake/sea_g2pConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/sea_g2pConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sea_g2p
+)
+
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/sea_g2pConfigVersion.cmake
+    VERSION       ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/sea_g2pConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/sea_g2pConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sea_g2p
+)
