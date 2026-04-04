@@ -1,7 +1,9 @@
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+# PCRE2 is a mandatory dependency
+find_dependency(PCRE2)
+
 include("${CMAKE_CURRENT_LIST_DIR}/sea_g2pTargets.cmake")
 
-# Ensure consumers can find PCRE2 too, since we link to it privately
-# (only needed if sea_g2p was built as a shared library with PCRE2 shared)
 check_required_components(sea_g2p)

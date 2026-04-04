@@ -9,10 +9,14 @@ option(SEA_G2P_FETCH_PCRE2   "Fetch PCRE2 via FetchContent if not found on syste
 option(SEA_G2P_BUILD_SHARED  "Build as shared library instead of static"           OFF)
 option(SEA_G2P_ENABLE_ICU    "Use ICU for NFC Unicode normalization (recommended)"  ON)
 
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    set(SEA_G2P_IS_TOP_LEVEL ON)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.21)
+    set(SEA_G2P_IS_TOP_LEVEL ${PROJECT_IS_TOP_LEVEL})
 else()
-    set(SEA_G2P_IS_TOP_LEVEL OFF)
+    if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR OR CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+        set(SEA_G2P_IS_TOP_LEVEL ON)
+    else()
+        set(SEA_G2P_IS_TOP_LEVEL OFF)
+    endif()
 endif()
 
 option(SEA_G2P_BUILD_EXAMPLES "Build example programs" ${SEA_G2P_IS_TOP_LEVEL})
@@ -106,7 +110,7 @@ target_include_directories(sea_g2p
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(sea_g2p PRIVATE ${_PCRE2_TARGET})
+target_link_libraries(sea_g2p PRIVATE $<BUILD_INTERFACE:${_PCRE2_TARGET}>)
 
 if(_HAS_ICU)
     target_link_libraries(sea_g2p PRIVATE ICU::uc)
@@ -121,47 +125,49 @@ endif()
 
 
 # ── Installation ──────────────────────────────────────────────────────────────
-include(GNUInstallDirs)
-include(CMakePackageConfigHelpers)
+if(SEA_G2P_IS_TOP_LEVEL)
+    include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
 
-install(TARGETS sea_g2p
-    EXPORT sea_g2pTargets
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
+    install(TARGETS sea_g2p
+        EXPORT sea_g2pTargets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
 
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-if(EXISTS "${DICT_SRC}")
-    install(FILES "${DICT_SRC}" DESTINATION ${CMAKE_INSTALL_BINDIR})
+    if(EXISTS "${DICT_SRC}")
+        install(FILES "${DICT_SRC}" DESTINATION ${CMAKE_INSTALL_BINDIR})
+    endif()
+
+    # Config files
+    configure_package_config_file(
+        "cmake/sea_g2pConfig.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/sea_g2pConfig.cmake"
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sea_g2p
+    )
+
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/sea_g2pConfigVersion.cmake"
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion
+    )
+
+    install(EXPORT sea_g2pTargets
+        FILE sea_g2pTargets.cmake
+        NAMESPACE sea_g2p::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sea_g2p
+    )
+
+    install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/sea_g2pConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/sea_g2pConfigVersion.cmake"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sea_g2p
+    )
 endif()
-
-# Config files
-configure_package_config_file(
-    "cmake/sea_g2pConfig.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/sea_g2pConfig.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sea_g2p
-)
-
-write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/sea_g2pConfigVersion.cmake"
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
-)
-
-install(EXPORT sea_g2pTargets
-    FILE sea_g2pTargets.cmake
-    NAMESPACE sea_g2p::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sea_g2p
-)
-
-install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/sea_g2pConfig.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/sea_g2pConfigVersion.cmake"
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sea_g2p
-)
 
 # ── Examples & Tests ──────────────────────────────────────────────────────────
 if(SEA_G2P_BUILD_EXAMPLES)
