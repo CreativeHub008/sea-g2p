@@ -101,6 +101,24 @@ else()
 endif()
 
 add_library(sea_g2p::sea_g2p ALIAS sea_g2p)
+# ── Asset Management ──────────────────────────────────────────────────────────
+set(DICT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../python/sea_g2p/sea_g2p.bin")
+set_target_properties(sea_g2p PROPERTIES SEA_G2P_DICT_FILE "${DICT_SRC}")
+
+# Helper function for consumers to copy the dictionary to their target directory
+function(sea_g2p_add_dictionary target)
+    get_target_property(DICT_PATH sea_g2p SEA_G2P_DICT_FILE)
+    if(NOT DICT_PATH)
+        message(FATAL_ERROR "sea_g2p: SEA_G2P_DICT_FILE property not found on target 'sea_g2p'")
+    endif()
+    
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${DICT_PATH}"
+        "$<TARGET_FILE_DIR:${target}>/sea_g2p.bin"
+        COMMENT "Copying sea_g2p dictionary to output directory of ${target}"
+    )
+endfunction()
 
 target_include_directories(sea_g2p
     PUBLIC
@@ -182,34 +200,16 @@ if(SEA_G2P_BUILD_TESTS)
     add_executable(test_all tests/test_all.cpp)
     target_link_libraries(test_all PRIVATE sea_g2p::sea_g2p)
 endif()
-# ── Asset Management ──────────────────────────────────────────────────────────
-# Copy the dictionary file to the build directory for zero-config use
-set(DICT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../python/sea_g2p/sea_g2p.bin")
+# ── Asset Management (Internal Examples & Tests) ──────────────────────────────
 if(EXISTS "${DICT_SRC}")
     # For single-config generators (like Ninja/Unix Makefiles)
     file(COPY "${DICT_SRC}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
     
-    # For multi-config generators (like MSVC), copy to the target's output dir
     if(SEA_G2P_BUILD_EXAMPLES)
-        add_custom_command(TARGET example_main POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${DICT_SRC}"
-            "$<TARGET_FILE_DIR:example_main>/sea_g2p.bin"
-            COMMENT "Copying dictionary to example output directory"
-        )
-        add_custom_command(TARGET benchmark POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${DICT_SRC}"
-            "$<TARGET_FILE_DIR:benchmark>/sea_g2p.bin"
-            COMMENT "Copying dictionary to benchmark output directory"
-        )
+        sea_g2p_add_dictionary(example_main)
+        sea_g2p_add_dictionary(benchmark)
     endif()
     if(SEA_G2P_BUILD_TESTS)
-        add_custom_command(TARGET test_all POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${DICT_SRC}"
-            "$<TARGET_FILE_DIR:test_all>/sea_g2p.bin"
-            COMMENT "Copying dictionary to test output directory"
-        )
+        sea_g2p_add_dictionary(test_all)
     endif()
 endif()
