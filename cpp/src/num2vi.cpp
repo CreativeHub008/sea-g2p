@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cctype>
 #include <sstream>
+#include <string>
+#include <vector>
 
 namespace sea_g2p {
 
@@ -60,6 +62,8 @@ std::string n2w_hundreds(const std::string& numbers) {
             res.push_back("mốt");
         } else if (u == '5' && t != '0') {
             res.push_back("lăm");
+        } else if (u == '4' && t != '0' && t != '1') {
+            res.push_back("tư");
         } else {
             res.push_back(digit_to_vi(u));
         }

@@ -13,6 +13,8 @@
 #include <cctype>
 #include <future>
 #include <mutex>
+#include <sstream>
+#include <string>
 #include <thread>
 
 #ifdef SEA_G2P_HAS_ICU

@@ -100,3 +100,41 @@ To install for development purposes:
    ```bash
    pip install -e .
    ```
+
+
+## 🚀 C++ API
+
+High-performance C++ implementation with **zero-config** dictionary discovery. See the [C++ Integration Guide](cpp/README.md) for full details.
+
+```cpp
+#include <sea_g2p/vi_normalizer.hpp>
+#include <sea_g2p/g2p.hpp>
+#include <iostream>
+
+int main() {
+    // 1. Initialize (Automatically finds sea_g2p.bin)
+    sea_g2p::Normalizer normalizer("vi");
+    sea_g2p::G2PEngine g2p; 
+
+    // 2. Process text
+    std::string text = "Giá SP500 hôm nay là 4.200,5 điểm.";
+    std::string normalized = normalizer.normalize(text);
+    std::string phonemes = g2p.phonemize(normalized);
+
+    std::cout << "Normalized: " << normalized << "\n"
+              << "Phonemes:   " << phonemes   << std::endl;
+
+    return 0;
+}
+```
+
+### Build C++
+
+```bash
+cd cpp
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . --config Release
+```
+
+For more advanced integration (CMake `FetchContent`, `find_package`), check [cpp/README.md](cpp/README.md).

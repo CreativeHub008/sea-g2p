@@ -49,7 +49,7 @@ bool Match::has(int idx) const noexcept {
 std::string Match::get(int idx) const {
     if (!has(idx)) return {};
     const auto& g = groups[idx];
-    return subject.substr(g.start, g.end - g.start);
+    return std::string(subject.substr(g.start, g.end - g.start));
 }
 
 std::string Match::get(const std::string& name) const {
@@ -79,7 +79,7 @@ Regex::Regex(const std::string& pattern)
     impl_->code = pcre2_compile(
         reinterpret_cast<PCRE2_SPTR>(pattern.c_str()),
         PCRE2_ZERO_TERMINATED,
-        PCRE2_UTF,      // enable UTF-8 processing
+        PCRE2_UTF | PCRE2_UCP,      // enable UTF-8 processing and Unicode properties/boundaries
         &errcode, &erroffset, nullptr);
 
     if (!impl_->code) {
@@ -93,6 +93,10 @@ Regex::Regex(const std::string& pattern)
     }
 
     pcre2_pattern_info(impl_->code, PCRE2_INFO_CAPTURECOUNT, &impl_->capture_count);
+    
+    // Enable JIT compilation for faster matching
+    pcre2_jit_compile(impl_->code, PCRE2_JIT_COMPLETE);
+
     impl_->build_name_table();
 }
 
@@ -101,7 +105,7 @@ Regex::Regex(Regex&&) noexcept = default;
 Regex& Regex::operator=(Regex&&) noexcept = default;
 
 // ── Match building ────────────────────────────────────────────────────────────
-Match Regex::make_match(const std::string& subject,
+Match Regex::make_match(std::string_view subject,
                         const size_t* ovector, int rc) const
 {
     Match m;
@@ -230,56 +234,61 @@ std::string Regex::replace_all(const std::string& text, const std::string& repl)
 std::string Regex::replace_all(const std::string& text,
                                 std::function<std::string(const Match&)> fn) const
 {
-    std::string result;
-    result.reserve(text.size());
-
-    pcre2_match_data* md =
-        pcre2_match_data_create_from_pattern(impl_->code, nullptr);
-
-    size_t offset  = 0;
-    size_t prev    = 0;
     const size_t len = text.size();
+    if (len == 0) return {};
 
-    while (offset <= len) {
-        int rc = pcre2_match(
-            impl_->code,
-            reinterpret_cast<PCRE2_SPTR>(text.c_str()), len,
-            offset, 0, md, nullptr);
-        if (rc < 0) break;
+    pcre2_match_data* md = pcre2_match_data_create_from_pattern(impl_->code, nullptr);
+    const PCRE2_SIZE* ov = pcre2_get_ovector_pointer(md);
+    
+    // ── FAST PATH: One match call to check if we change anything ─────────────
+    // pcre2_jit_match is the fastest entry point for JIT-compiled patterns.
+    int rc = pcre2_jit_match(impl_->code, (PCRE2_SPTR)text.c_str(), len, 0, 0, md, nullptr);
 
-        const PCRE2_SIZE* ov = pcre2_get_ovector_pointer(md);
-        size_t match_start = ov[0];
-        size_t match_end   = ov[1];
+    if (rc < 0) {
+        pcre2_match_data_free(md);
+        return text; // Zero allocations, zero copies if no matches.
+    }
 
-        // Append unmatched text before this match
-        result.append(text, prev, match_start - prev);
+    // ── SLOW PATH: At least one match ───────────────────────────────────────
+    std::string result;
+    result.reserve(len + 64);
+    size_t prev = 0;
+    size_t offset = 0;
 
-        // Apply replacement
-        Match m = make_match(text, ov, rc);
-        result += fn(m);
+    while (rc >= 0) {
+        if (ov[0] > prev) {
+            result.append(text, prev, ov[0] - prev);
+        }
 
-        prev   = match_end;
-        size_t new_offset = match_end;
-        if (new_offset == match_start) {
+        // Apply replacement (Match holds a view of text)
+        int actual_rc = (rc == 0) ? (int)impl_->capture_count + 1 : rc;
+        result += fn(make_match(text, ov, actual_rc));
+
+        prev = ov[1];
+        offset = ov[1];
+
+        // Zero-length match handle (e.g. \b)
+        if (ov[0] == ov[1]) {
             if (offset < len) {
-                // Append current char literally and skip
-                uint8_t b = static_cast<uint8_t>(text[offset]);
-                size_t  step;
+                uint8_t b = (uint8_t)text[offset];
+                size_t step = 1;
                 if      ((b & 0x80) == 0x00) step = 1;
                 else if ((b & 0xE0) == 0xC0) step = 2;
                 else if ((b & 0xF0) == 0xE0) step = 3;
-                else                          step = 4;
+                else                         step = 4;
                 result.append(text, offset, step);
-                prev   = offset + step;
-                offset = prev;
-            } else {
-                break;
-            }
-        } else {
-            offset = new_offset;
+                offset += step;
+                prev = offset;
+            } else break;
         }
+
+        rc = pcre2_jit_match(impl_->code, (PCRE2_SPTR)text.c_str(), len, offset, 0, md, nullptr);
     }
-    result.append(text, prev, std::string::npos);
+
+    if (prev < len) {
+        result.append(text, prev, len - prev);
+    }
+
     pcre2_match_data_free(md);
     return result;
 }

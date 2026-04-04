@@ -66,6 +66,12 @@ struct Token {
 // Thread-safe G2P engine.  Multiple threads may call phonemize() concurrently.
 class G2PEngine {
 public:
+    // Automatically find sea_g2p.bin in standard locations:
+    // 1. Env SEA_G2P_DICT_PATH
+    // 2. Directory of current executable
+    // 3. Current working directory
+    G2PEngine();
+
     explicit G2PEngine(const std::string& dict_path);
     ~G2PEngine();
 

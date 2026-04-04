@@ -6,12 +6,14 @@
 #include <cassert>
 #include <cctype>
 #include <cstring>
+#include <functional>
 #include <future>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
 
 #ifdef _WIN32
+#  define NOMINMAX
 #  define WIN32_LEAN_AND_MEAN
 #  include <windows.h>
 #else
@@ -20,6 +22,9 @@
 #  include <sys/stat.h>
 #  include <unistd.h>
 #endif
+
+#include <cstdlib> // std::getenv
+#include <iostream>
 
 namespace sea_g2p {
 
@@ -278,10 +283,73 @@ static std::string replace_all_str(std::string s,
     return s;
 }
 
+static std::string get_executable_dir() {
+    char path[1024];
+#ifdef _WIN32
+    DWORD size = GetModuleFileNameA(nullptr, path, sizeof(path));
+    if (size == 0 || size == sizeof(path)) return "";
+    std::string s(path, size);
+    size_t last_slash = s.find_last_of("\\/");
+    if (last_slash != std::string::npos) return s.substr(0, last_slash);
+#else
+    ssize_t len = readlink("/proc/self/exe", path, sizeof(path) - 1);
+    if (len != -1) {
+        path[len] = '\0';
+        std::string s(path);
+        size_t last_slash = s.find_last_of("/");
+        if (last_slash != std::string::npos) return s.substr(0, last_slash);
+    }
+#endif
+    return "";
+}
+
+static bool file_exists_reg(const std::string& path) {
+    if (path.empty()) return false;
+#ifdef _WIN32
+    DWORD attr = GetFileAttributesA(path.c_str());
+    return (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY));
+#else
+    struct stat st;
+    return (::stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode));
+#endif
+}
+
+static std::string find_dictionary(const std::string& provided_path) {
+    if (!provided_path.empty() && file_exists_reg(provided_path)) return provided_path;
+
+    // 1. Env
+    const char* env_path = std::getenv("SEA_G2P_DICT_PATH");
+    if (env_path && file_exists_reg(env_path)) return env_path;
+
+    // 2. Executable dir
+    std::string exe_dir = get_executable_dir();
+    if (!exe_dir.empty()) {
+        std::string p = exe_dir + "/sea_g2p.bin";
+        if (file_exists_reg(p)) return p;
+#ifdef _WIN32
+        p = exe_dir + "\\sea_g2p.bin";
+        if (file_exists_reg(p)) return p;
+#endif
+    }
+
+    // 3. CWD
+    if (file_exists_reg("sea_g2p.bin")) return "sea_g2p.bin";
+    
+    // 4. Fallback search /python/sea_g2p/sea_g2p.bin relative to exe for dev
+    if (!exe_dir.empty()) {
+        std::string p = exe_dir + "/../../python/sea_g2p/sea_g2p.bin";
+        if (file_exists_reg(p)) return p;
+    }
+
+    return provided_path.empty() ? "sea_g2p.bin" : provided_path;
+}
+
 // ── G2PEngine ─────────────────────────────────────────────────────────────────
 
+G2PEngine::G2PEngine() : G2PEngine("") {}
+
 G2PEngine::G2PEngine(const std::string& dict_path)
-    : dict_(dict_path)
+    : dict_(find_dictionary(dict_path))
 {
     merged_cache_.reserve(2048);
     common_cache_.reserve(1024);

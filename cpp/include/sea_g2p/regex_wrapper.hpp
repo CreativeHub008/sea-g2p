@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <string_view>
 
 namespace sea_g2p {
 
@@ -21,7 +22,7 @@ struct Match {
         bool matched() const noexcept { return start != ~size_t(0); }
     };
 
-    std::string        subject;  // copy of the matched subject
+    std::string_view   subject;  // view of the matched subject
     std::vector<Group> groups;   // index 0 = full match
 
     bool        has(int idx) const noexcept;
@@ -67,7 +68,7 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 
-    Match make_match(const std::string& subject, const size_t* ovector, int rc) const;
+    Match make_match(std::string_view subject, const size_t* ovector, int rc) const;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -58,11 +58,11 @@ static const Regex& re_version() {
     return r;
 }
 static const Regex& re_prime() {
-    static const Regex r(R"((\b[a-zA-Z0-9])['\u2019](?!\w))");
+    static const Regex r(R"((\b[a-zA-Z0-9])['\x{2019}](?!\w))");
     return r;
 }
 static const Regex& re_prime_digit() {
-    static const Regex r(R"((?<=\d)(['\u2019]+|[\x22\u201D]))");
+    static const Regex r(R"((?<=\d)(['\x{2019}]+|[\x22\x{201D}]))");
     return r;
 }
 static const Regex& re_letter() {
@@ -104,7 +104,7 @@ static const Regex& re_clean_quotes() {
     return r;
 }
 static const Regex& re_clean_quotes_edges() {
-    static const Regex r(R"((^|[\s.,!?;:])[\u2018\u2019']+|[\u2018\u2019']+($|[\s.,!?;:]))");
+    static const Regex r(R"((^|[\s.,!?;:])[\x{2018}\x{2019}']+|[\x{2018}\x{2019}']+($|[\s.,!?;:]))");
     return r;
 }
 static const Regex& re_colon_semicolon() {
