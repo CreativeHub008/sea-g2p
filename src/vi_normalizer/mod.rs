@@ -266,14 +266,39 @@ pub fn clean_vietnamese_text(text: &str) -> String {
 pub struct Normalizer {
     #[pyo3(get)]
     pub lang: String,
+    #[pyo3(get)]
+    pub ignore: Option<String>,
+    ignore_regex: Option<Regex>,
+}
+
+fn build_ignore_regex(ignore: &str) -> Option<Regex> {
+    if ignore.is_empty() { return None; }
+    let mut patterns = Vec::new();
+    let chars: Vec<char> = ignore.chars().collect();
+    for i in (0..chars.len()).step_by(2) {
+        if i + 1 < chars.len() {
+            let start = chars[i];
+            let end = chars[i+1];
+            let p = format!(r"{}.*?{}", regex::escape(&start.to_string()), regex::escape(&end.to_string()));
+            patterns.push(p);
+        }
+    }
+    if patterns.is_empty() { return None; }
+    let combined = format!(r"(?si)({})", patterns.join("|"));
+    Regex::new(&combined).ok()
 }
 
 #[pymethods]
 impl Normalizer {
     #[new]
-    #[pyo3(signature = (lang="vi"))]
-    pub fn new(lang: &str) -> Self {
-        Normalizer { lang: lang.to_string() }
+    #[pyo3(signature = (lang="vi", ignore=None))]
+    pub fn new(lang: &str, ignore: Option<String>) -> Self {
+        let ignore_regex = ignore.as_deref().and_then(build_ignore_regex);
+        Normalizer { 
+            lang: lang.to_string(),
+            ignore: ignore,
+            ignore_regex,
+        }
     }
 
     pub fn normalize(&self, text: &str) -> String {
@@ -290,6 +315,14 @@ impl Normalizer {
             en_contents.push(caps.get(0).unwrap().as_str().to_string());
             placeholder_pattern.replace("{}", &en_contents.len().saturating_sub(1).to_string())
         }).into_owned();
+
+        if let Some(re) = &self.ignore_regex {
+            let temp_text_ignore = current_text.clone();
+            current_text = re.replace_all(&temp_text_ignore, |caps: &Captures| {
+                en_contents.push(caps.get(0).unwrap().as_str().to_string());
+                placeholder_pattern.replace("{}", &en_contents.len().saturating_sub(1).to_string())
+            }).into_owned();
+        }
 
         current_text = clean_vietnamese_text(&current_text);
 
@@ -310,5 +343,25 @@ impl Normalizer {
             use rayon::prelude::*;
             Ok(texts.into_par_iter().map(|t| self.normalize(&t)).collect())
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ignore_mechanism() {
+        let n = Normalizer::new("vi", Some("[]()".to_string()));
+        assert_eq!(n.normalize("Số nhà [123]"), "số nhà [123]");
+        assert_eq!(n.normalize("Ngày [20/04/2026]"), "ngày [20/04/2026]");
+        assert_eq!(n.normalize("Đây là (123) và [456]"), "đây là (123) và [456]");
+    }
+
+    #[test]
+    fn test_no_ignore() {
+        let n = Normalizer::new("vi", None);
+        // [123] will be normalized to "một trăm hai mươi ba" and brackets will be stripped
+        assert_eq!(n.normalize("Số nhà [123]"), "số nhà một trăm hai mươi ba");
     }
 }

@@ -443,7 +443,50 @@ std::string clean_vietnamese_text(const std::string& text) {
 
 // ── Normalizer ────────────────────────────────────────────────────────────────
 
-Normalizer::Normalizer(std::string lang) : lang_(std::move(lang)) {}
+Normalizer::Normalizer(std::string lang, std::string ignore) 
+    : lang_(std::move(lang)), ignore_(std::move(ignore)) 
+{
+    if (!ignore_.empty()) {
+        std::vector<uint32_t> cps = utf8_codepoints(ignore_);
+        std::string pattern = "(?si)(";
+        bool first = true;
+        for (size_t i = 0; i + 1 < cps.size(); i += 2) {
+            if (!first) pattern += "|";
+            first = false;
+
+            // Pattern for pair cps[i]...cps[i+1]
+            // We need to convert each codepoint back to UTF-8 to escape it
+            auto cp_to_utf8 = [](uint32_t cp) {
+                std::string s;
+                if (cp < 0x80) s += (char)cp;
+                else if (cp < 0x800) {
+                    s += (char)(0xc0 | (cp >> 6));
+                    s += (char)(0x80 | (cp & 0x3f));
+                } else if (cp < 0x10000) {
+                    s += (char)(0xe0 | (cp >> 12));
+                    s += (char)(0x80 | ((cp >> 6) & 0x3f));
+                    s += (char)(0x80 | (cp & 0x3f));
+                } else {
+                    s += (char)(0xf0 | (cp >> 18));
+                    s += (char)(0x80 | ((cp >> 12) & 0x3f));
+                    s += (char)(0x80 | ((cp >> 6) & 0x3f));
+                    s += (char)(0x80 | (cp & 0x3f));
+                }
+                return s;
+            };
+
+            pattern += regex_escape(cp_to_utf8(cps[i])) + ".*?" + regex_escape(cp_to_utf8(cps[i+1]));
+        }
+        pattern += ")";
+        if (pattern != "(?si)() ") { // simplified check
+             try {
+                ignore_re_ = std::make_unique<Regex>(pattern);
+             } catch (...) {}
+        }
+    }
+}
+
+Normalizer::~Normalizer() = default;
 
 std::string Normalizer::normalize(const std::string& text) const {
     if (text.empty()) return {};
@@ -457,6 +500,13 @@ std::string Normalizer::normalize(const std::string& text) const {
         en_contents.push_back(caps.get(0));
         return "ENTOKEN" + std::to_string(en_contents.size() - 1);
     });
+
+    if (ignore_re_) {
+        current = ignore_re_->replace_all(current, [&en_contents](const Match& caps) {
+            en_contents.push_back(caps.get(0));
+            return "ENTOKEN" + std::to_string(en_contents.size() - 1);
+        });
+    }
 
     current = clean_vietnamese_text(current);
 

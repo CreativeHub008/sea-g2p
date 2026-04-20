@@ -49,8 +49,8 @@ void test_normalization() {
             {"1.001", "một nghìn không trăm lẻ một"},
             {"1,000,000", "một triệu"},
             {"3,14", "ba phẩy một bốn"},
-            {"-123", "âm một trăm hai mươi ba"},  // Corrected: small numbers are verbalized
-            {"1234567", "một hai ba bốn năm sáu bảy"}, // 7+ digits are digit-by-digit
+            {"-123", "âm một trăm hai mươi ba"},
+            {"1234567", "một hai ba bốn năm sáu bảy"},
             
             // 2. Dates & Time
             {"21/02/2025", "ngày hai mươi mốt tháng hai năm hai nghìn không trăm hai mươi lăm"},
@@ -84,8 +84,8 @@ void test_normalization() {
 
         int fails = 0;
         for (const auto& tc : test_cases) {
-            std::string result = clean_str(normalizer.normalize(tc.input));
-            // Remove <en> tags for easier comparison in this basic test
+            std::string result = normalizer.normalize(tc.input);
+            // Remove <en> tags for easier comparison
             std::string clean_result;
             size_t pos = 0;
             while (pos < result.length()) {
@@ -104,7 +104,38 @@ void test_normalization() {
                 fails++;
             }
         }
-        std::cout << "Normalization: " << (test_cases.size() - fails) << "/" << test_cases.size() << " passed." << std::endl;
+
+        // --- Testing Ignore Tags ---
+        sea_g2p::Normalizer normalizer_ignore("vi", "[]()");
+        std::vector<TestCase> ignore_cases = {
+            {"Số nhà [123] đường abc", "số nhà [123] đường abc"},
+            {"Ngày [20/04/2026]", "ngày [20/04/2026]"},
+            {"Hòa trộn [English] và Tiếng Việt", "hòa trộn [English] và tiếng việt"},
+            {"Đây là (123) và [456]", "Đây là (123) và [456]"}
+        };
+
+        for (const auto& tc : ignore_cases) {
+            std::string result = normalizer_ignore.normalize(tc.input);
+            std::string clean_result;
+            size_t pos = 0;
+            while (pos < result.length()) {
+                if (result.substr(pos, 4) == "<en>") pos += 4;
+                else if (result.substr(pos, 5) == "</en>") pos += 5;
+                else {
+                    clean_result += result[pos];
+                    pos++;
+                }
+            }
+            clean_result = clean_str(clean_result);
+            std::string clean_expected = clean_str(tc.expected);
+
+            if (clean_result != clean_expected) {
+                std::cerr << "FAIL Ignore: [" << tc.input << "] -> [" << clean_result << "] != [" << clean_expected << "]" << std::endl;
+                fails++;
+            }
+        }
+
+        std::cout << "Normalization: " << (test_cases.size() + ignore_cases.size() - fails) << "/" << (test_cases.size() + ignore_cases.size()) << " passed." << std::endl;
         if (fails > 0) throw std::runtime_error("Normalization tests failed");
 
     } catch (const std::exception& e) {
